@@ -18,9 +18,11 @@ for (let zed of exampleToPush.people) {
   zed.group = exampleToPush;
 }
 const pushedId = database.push(exampleToPush);
-console.log(`pushed and pulled`);
 console.log(database);
-console.log(database.pull(pushedId));
+
+database.addListener(pushedId, "fired", console.log);
+
+database.setDatom(pushedId, "fired", "totally");
 
 function testPerformance() {
   const stime = performance.now();
@@ -43,3 +45,7 @@ function testPerformance() {
 //   [DQ.RESULT, "parent", DQ.VAR1],
 //   [DQ.VAR1, "name", "stanislav"],
 // ]);
+
+const result = database.query([DQ.$, "name", "oliver"]);
+const result2 = database.queryPull([DQ.$, "name", "oliver"]);
+console.log(result2);
