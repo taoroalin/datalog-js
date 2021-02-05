@@ -65,7 +65,7 @@ class DQ {
   }
 
   pull(entityId) {
-    // Keep track of seen entities to avoid pulling infinite loop
+    // Keep track of seen entities to capture recursive data structures
     const entityIdToObj = {}
     const pull = (entityId) => {
       const result = { entityId: entityId };
@@ -74,21 +74,16 @@ class DQ {
       for (let attribute in entity) {
         const value = entity[attribute]
         if (this.isMany[attribute]) {
+          result[attribute] = [];
           for (let v of value) {
-            if (
-              typeof v === "number" &&
-              v >= DQ.minEntityId
-            ) {
+            if (typeof v === "number" && v >= DQ.minEntityId) {
               if (entityIdToObj[v])
                 result[attribute].push(entityIdToObj[v]);
               else result[attribute].push(pull(v));
             } else result[attribute].push(v);
           }
         } else {
-          if (
-            typeof value === "number" &&
-            value >= DQ.minEntityId
-          ) {
+          if (typeof value === "number" && value >= DQ.minEntityId) {
             if (entityIdToObj[value])
               result[attribute] = entityIdToObj[value];
             else result[attribute] = pull(value);
