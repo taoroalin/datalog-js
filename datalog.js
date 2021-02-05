@@ -8,7 +8,7 @@ const makeArray = () => [];
 const makeObject = () => ({});
 
 class Index {
-  constructor() {}
+  constructor() { }
   get1(key1) {
     if (this[key1] === undefined) {
       this[key1] = {};
@@ -34,20 +34,22 @@ class DQ {
   // numbers over one trillion are entity ids, numbers lower are regular numbers.
   static minEntityId = 1000000000;
 
-  static $ = "?";
-  static $1 = "?1";
-  static $2 = "?2";
-  static $3 = "?3";
-  static $4 = "?4";
-  static $a = "?a";
-  static _ = "_";
-
-  constructor() {
+  constructor(schema) { // schema is a fugly word, especially in this font :(
+    // schema: [[attributeString, ...("fullText" | ...)]]
     this.eav = new Index();
     this.aev = new Index();
     this.vae = new Index();
     this.listeners = new Index();
     this.nextEntityId = DQ.minEntityId;
+
+    this.fullTextAttributes = {};
+    this.fullTextIndex = {};
+
+    for (let scheme in schema) { // this is not correct pluralization
+      if (scheme[1] === "fullText") {
+        this.fullTextAttributes[scheme[0]] = true;
+      }
+    }
   }
 
   newEntity() {
@@ -89,22 +91,10 @@ class DQ {
     this.listeners.get2(entity, attribute).add(callback);
   }
 
+  // TODO this is totally fake, needs to be actually written
   query(firstStatement, ...statements) {
     let matches = this.vae[firstStatement[2]][firstStatement[1]];
     return matches;
-  }
-
-  queryPull(firstStatement, ...statements) {
-    const queryResult = this.query(firstStatement, ...statements);
-    if (queryResult.isDatabaseMany) {
-      const result = [];
-      for (let id of queryResult) {
-        result.push(this.pull(id));
-      }
-      return result;
-    } else {
-      return this.pull(queryResult);
-    }
   }
 
   pull(entityId) {
@@ -185,3 +175,80 @@ class DQ {
     return obj.entityId;
   }
 }
+
+const excludedWords = new Set([
+  "a",
+  "also",
+  "and",
+  "as",
+  "at",
+  "be",
+  "but",
+  "by",
+  "can",
+  "come",
+  "could",
+  "do",
+  "even",
+  "for",
+  "from",
+  "get",
+  "go",
+  "have",
+  "he",
+  "her",
+  "here",
+  "him",
+  "his",
+  "how",
+  "I",
+  "if",
+  "in",
+  "into",
+  "it",
+  "its",
+  "just",
+  "know",
+  "like",
+  "look",
+  "me",
+  "more",
+  "my",
+  "new",
+  "no",
+  "not",
+  "now",
+  "of",
+  "on",
+  "one",
+  "only",
+  "or",
+  "other",
+  "our",
+  "out",
+  "say",
+  "see",
+  "she",
+  "so",
+  "some",
+  "take",
+  "tell",
+  "than",
+  "that",
+  "the",
+  "then",
+  "there",
+  "these",
+  "they",
+  "thing",
+  "this",
+  "those",
+  "to",
+  "very",
+  "want",
+  "way",
+  "well",
+  "who",
+  "with",
+  "you",
+]);
