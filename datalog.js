@@ -1,12 +1,3 @@
-const makeSet = () => {
-  const result = new Set();
-  result.isDatabaseMany = true;
-  return result;
-};
-
-const makeArray = () => [];
-const makeObject = () => ({});
-
 class Index {
   constructor() { }
   get1(key1) {
@@ -20,8 +11,8 @@ class Index {
       this[key1] = {};
     }
     const level = this[key1];
-    if (level[key2] === undefined || level[key2].isDatabaseMany !== true) {
-      level[key2] = makeSet();
+    if (level[key2] === undefined) {
+      level[key2] = []
     }
     return level[key2];
   }
@@ -34,21 +25,16 @@ class DQ {
   // numbers over one trillion are entity ids, numbers lower are regular numbers.
   static minEntityId = 1000000000;
 
-  constructor(schema, ednSchema) { // schema is a fugly word, especially in this font :(
+  constructor(schema) { // schema is a fugly word, especially in this font :(
     // schema: [[attributeString, ...("fullText" | ...)]]
     this.eav = new Index();
     this.aev = new Index();
     this.vae = new Index();
-    this.listeners = new Index();
     this.nextEntityId = DQ.minEntityId;
-    this.ednSchema = ednSchema;
-
-    this.fullTextAttributes = {};
-    this.fullTextIndex = {};
-
-    for (let scheme in schema) { // this is not correct pluralization
-      if (scheme[1] === "fullText") {
-        this.fullTextAttributes[scheme[0]] = true;
+    this.isMany = {};
+    if (schema && schema.many) {
+      for (let x of schema.many) {
+        this.isMany[x] = true;
       }
     }
   }
@@ -60,16 +46,11 @@ class DQ {
 
   addDatom(entity, attribute, value) {
     this.nextEntityId = Math.max(this.nextEntityId, entity + 1);
-    this.eav.get2(entity, attribute).add(value);
-    this.aev.get2(attribute, entity).add(value);
+    this.eav.get2(entity, attribute).push(value);
+    this.aev.get2(attribute, entity).push(value);
 
     if (typeof value !== "object") {
-      this.vae.get2(value, attribute).add(entity);
-    }
-    if (this.listeners.has2(entity, attribute)) {
-      for (let callback of this.listeners.get2(entity, attribute)) {
-        callback(value);
-      }
+      this.vae.get2(value, attribute).push(entity);
     }
   }
 
@@ -79,57 +60,39 @@ class DQ {
     this.aev.get1(attribute)[entity] = value;
 
     if (typeof value !== "object") {
-      this.vae.get2(value, attribute).add(entity);
+      this.vae.get2(value, attribute).push(entity);
     }
-    if (this.listeners.has2(entity, attribute)) {
-      for (let callback of this.listeners.get2(entity, attribute)) {
-        callback(value);
-      }
-    }
-  }
-
-  addListener(entity, attribute, callback) {
-    this.listeners.get2(entity, attribute).add(callback);
-  }
-
-  // TODO this is totally fake, needs to be actually written
-  query(firstStatement, ...statements) {
-    let matches = this.vae[firstStatement[2]][firstStatement[1]];
-    return matches;
   }
 
   pull(entityId) {
     // Keep track of seen entities to avoid pulling infinite loop
-    const entityIdToObj = new Map();
+    const entityIdToObj = {}
     const pull = (entityId) => {
       const result = { entityId: entityId };
-      entityIdToObj.set(entityId, result);
+      entityIdToObj[entityId] = result;
       const entity = this.eav.get1(entityId);
       for (let attribute in entity) {
-        const val = entity[attribute];
-        if (val.isDatabaseMany) {
-          result[attribute] = new Set();
-          for (let v of val) {
+        const value = entity[attribute]
+        if (this.isMany[attribute]) {
+          for (let v of value) {
             if (
               typeof v === "number" &&
-              attribute !== "entityId" &&
               v >= DQ.minEntityId
             ) {
-              if (entityIdToObj.has(v))
-                result[attribute].add(entityIdToObj.get(v));
-              else result[attribute].add(pull(v));
-            } else result[attribute].add(v);
+              if (entityIdToObj[v])
+                result[attribute].push(entityIdToObj[v]);
+              else result[attribute].push(pull(v));
+            } else result[attribute].push(v);
           }
         } else {
           if (
-            typeof val === "number" &&
-            attribute !== "entityId" &&
-            val >= DQ.minEntityId
+            typeof value === "number" &&
+            value >= DQ.minEntityId
           ) {
-            if (entityIdToObj.has(val))
-              result[attribute] = entityIdToObj.get(val);
-            else result[attribute] = pull(val);
-          } else result[attribute] = val;
+            if (entityIdToObj[value])
+              result[attribute] = entityIdToObj[value];
+            else result[attribute] = pull(value);
+          } else result[attribute] = value;
         }
       }
       return result;
@@ -137,43 +100,46 @@ class DQ {
     return pull(entityId);
   }
 
-  push(obj) {
-    if (obj.entityId === undefined) {
-      obj.entityId = this.newEntity();
-    }
-    for (let attribute in obj) {
-      const value = obj[attribute];
-      if (typeof value !== "object") {
-        this.setDatom(obj.entityId, attribute, value);
-      } else if (value instanceof Set) {
-        for (let setElement of value) {
-          if (typeof setElement !== "object") {
-            this.addDatom(obj.entityId, attribute, setElement);
-          } else if (setElement instanceof Set || setElement instanceof Array) {
-            throw new Error(`can't push nested arrays/sets`);
-          } else if (setElement.entityId !== undefined) {
-            this.addDatom(obj.entityId, attribute, setElement.entityId);
-          } else {
-            if (setElement.entityId === undefined) {
-              setElement.entityId = this.newEntity();
+  push(obj, objId) {
+    if (objId === undefined) objId = this.newEntity();
+    const objToId = new Map();
+    objToId.set(obj, objId);
+    const push = (obj, objId) => {
+      for (let attribute in obj) {
+        const value = obj[attribute];
+        if (typeof value !== "object") {
+          this.setDatom(objId, attribute, value);
+        } else if (value instanceof Array || value instanceof Set) {
+          for (let setElement of value) {
+            if (typeof setElement !== "object" || setElement instanceof Set || setElement instanceof Array) {
+              this.addDatom(objId, attribute, setElement);
+            } else {
+              let elId;
+              if (objToId.has(value)) {
+                elId = objToId.get(value);
+              } else {
+                elId = this.newEntity();
+                objToId.set(elId, value);
+                push(setElement, elId);
+              }
+              this.addDatom(objId, attribute, elId);
             }
-            this.addDatom(obj.entityId, attribute, setElement.entityId);
-            this.push(setElement);
           }
+        } else {
+          let valId;
+          if (objToId.has(value)) {
+            valId = objToId.get(value);
+          } else {
+            valId = this.newEntity();
+            objToId.set(valId, value);
+            push(value, valId);
+          }
+          this.setDatom(objId, attribute, valId);
         }
-      } else if (value instanceof Array) {
-        throw new Error(`no know how do array`);
-      } else if (value.entityId !== undefined) {
-        this.addDatom(obj.entityId, attribute, value.entityId);
-      } else {
-        if (value.entityId === undefined) {
-          value.entityId = this.newEntity();
-        }
-        this.setDatom(obj.entityId, attribute, value.entityId);
-        this.push(value);
       }
     }
-    return obj.entityId;
+    push(obj, objId);
+    return objId;
   }
 }
 

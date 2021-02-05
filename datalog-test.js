@@ -20,8 +20,6 @@ for (let zed of exampleToPush.people) {
 const pushedId = database.push(exampleToPush);
 console.log(database);
 
-database.addListener(pushedId, "fired", console.log);
-
 database.setDatom(pushedId, "fired", "totally");
 
 function testPerformance() {
@@ -34,6 +32,25 @@ function testPerformance() {
   console.log(`took ${performance.now() - stime}`);
 }
 
+const testRoamJSON = async () => {
+  const manyAttributes = ["node/subpages", "vc/blocks", "edit/seen-by", "attrs/lookup", "node/windows", "node/sections", "harc/v", "block/refs", "harc/a", "block/children", "create/seen-by", "node/links", "query/results", "harc/e", "block/parents"];
+  const jsonResponse = await fetch("../test-data/graphminer.json");
+  const jsonGraph = await jsonResponse.json();
+  console.log(jsonGraph);
+  const db = new DQ({ many: manyAttributes });
+  const pushtime = performance.now();
+  for (let page of jsonGraph) db.push(page);
+  console.log(`push took ${performance.now() - pushtime}`)
+  console.log(db.aev);
+  const pullTime = performance.now();
+  const remake = db.pull(DQ.minEntityId);
+  console.log(`pull took ${performance.now() - pullTime}`)
+  console.log(remake);
+}
+
+testPerformance();
+testRoamJSON();
+
 // // this is a query in Clojure style. It doesn't look right in JS
 // const stanislav = Database.query([
 //   ["?", "parent", "?2"],
@@ -45,7 +62,3 @@ function testPerformance() {
 //   [DQ.RESULT, "parent", DQ.VAR1],
 //   [DQ.VAR1, "name", "stanislav"],
 // ]);
-
-const result = database.query([DQ.$, "name", "oliver"]);
-const result2 = database.queryPull([DQ.$, "name", "oliver"]);
-console.log(result2);
