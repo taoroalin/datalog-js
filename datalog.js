@@ -2,139 +2,134 @@ class Index {
   constructor() { }
   get1(key1) {
     if (this[key1] === undefined) {
-      this[key1] = {};
+      this[key1] = {}
     }
-    return this[key1];
+    return this[key1]
   }
-  get2(key1, key2) {
+  get2(key1,key2) {
     if (this[key1] === undefined) {
-      this[key1] = {};
+      this[key1] = {}
     }
-    const level = this[key1];
+    const level = this[key1]
     if (level[key2] === undefined) {
       level[key2] = []
     }
-    return level[key2];
+    return level[key2]
   }
-  has2(key1, key2) {
-    return this[key1] && this[key1][key2];
+  has2(key1,key2) {
+    return this[key1] && this[key1][key2]
   }
 }
 
 class DQ {
   // numbers over one trillion are entity ids, numbers lower are regular numbers.
-  static minEntityId = 1000000000;
+  static minEntityId = 10000000000000;
 
   constructor(schema) { // schema is a fugly word, especially in this font :(
     // schema: [[attributeString, ...("fullText" | ...)]]
-    this.eav = new Index();
-    this.aev = new Index();
-    this.vae = new Index();
-    this.nextEntityId = DQ.minEntityId;
-    this.isMany = {};
+    this.eav = new Index()
+    this.aev = new Index()
+    this.vae = new Index()
+    this.nextEntityId = DQ.minEntityId
+    this.isMany = {}
     if (schema && schema.many) {
       for (let x of schema.many) {
-        this.isMany[x] = true;
+        this.isMany[x] = true
       }
     }
   }
 
   newEntity() {
-    this.nextEntityId++;
-    return this.nextEntityId - 1;
+    this.nextEntityId++
+    return this.nextEntityId - 1
   }
 
-  addDatom(entity, attribute, value) {
-    this.nextEntityId = Math.max(this.nextEntityId, entity + 1);
-    this.eav.get2(entity, attribute).push(value);
-    this.aev.get2(attribute, entity).push(value);
+  addDatom(entity,attribute,value) {
+    this.nextEntityId = Math.max(this.nextEntityId,entity + 1)
+    this.eav.get2(entity,attribute).push(value)
+    this.aev.get2(attribute,entity).push(value)
 
     if (typeof value !== "object") {
-      this.vae.get2(value, attribute).push(entity);
+      this.vae.get2(value,attribute).push(entity)
     }
   }
 
-  setDatom(entity, attribute, value) {
-    this.nextEntityId = Math.max(this.nextEntityId, entity + 1);
-    this.eav.get1(entity)[attribute] = value;
-    this.aev.get1(attribute)[entity] = value;
+  setDatom(entity,attribute,value) {
+    this.nextEntityId = Math.max(this.nextEntityId,entity + 1)
+    this.eav.get1(entity)[attribute] = value
+    this.aev.get1(attribute)[entity] = value
 
     if (typeof value !== "object") {
-      this.vae.get2(value, attribute).push(entity);
+      this.vae.get2(value,attribute).push(entity)
     }
   }
 
-  pull(entityId) {
+  pull(entityId,includeId = false) {
     // Keep track of seen entities to capture recursive data structures
     const entityIdToObj = {}
     const pull = (entityId) => {
-      const result = { entityId: entityId };
-      entityIdToObj[entityId] = result;
-      const entity = this.eav.get1(entityId);
+      const result = {}
+      if (includeId) result.entityId = entityId
+      entityIdToObj[entityId] = result
+      const entity = this.eav.get1(entityId)
       for (let attribute in entity) {
         const value = entity[attribute]
         if (this.isMany[attribute]) {
-          result[attribute] = [];
+          result[attribute] = []
           for (let v of value) {
             if (typeof v === "number" && v >= DQ.minEntityId) {
               if (entityIdToObj[v])
-                result[attribute].push(entityIdToObj[v]);
-              else result[attribute].push(pull(v));
-            } else result[attribute].push(v);
+                result[attribute].push(entityIdToObj[v])
+              else result[attribute].push(pull(v))
+            } else result[attribute].push(v)
           }
         } else {
           if (typeof value === "number" && value >= DQ.minEntityId) {
             if (entityIdToObj[value])
-              result[attribute] = entityIdToObj[value];
-            else result[attribute] = pull(value);
-          } else result[attribute] = value;
+              result[attribute] = entityIdToObj[value]
+            else result[attribute] = pull(value)
+          } else result[attribute] = value
         }
       }
-      return result;
-    };
-    return pull(entityId);
+      return result
+    }
+    return pull(entityId)
   }
 
-  push(obj, objId) {
-    if (objId === undefined) objId = this.newEntity();
-    const objToId = new Map();
-    objToId.set(obj, objId);
-    const push = (obj, objId) => {
+  push(obj,objId) {
+    if (objId === undefined) objId = this.newEntity()
+    const push = (obj,objId) => {
       for (let attribute in obj) {
-        const value = obj[attribute];
+        const value = obj[attribute]
         if (typeof value !== "object") {
-          this.setDatom(objId, attribute, value);
+          this.setDatom(objId,attribute,value)
         } else if (value instanceof Array || value instanceof Set) {
-          for (let setElement of value) {
-            if (typeof setElement !== "object" || setElement instanceof Set || setElement instanceof Array) {
-              this.addDatom(objId, attribute, setElement);
-            } else {
-              let elId;
-              if (objToId.has(value)) {
-                elId = objToId.get(value);
+          if (attribute === ":block/refs") {
+            for (let x of Object.values(value)) {
+              this.addDatom(objId,":block/refs",x[":block/uid"])
+            }
+          } else {
+            for (let setElement of value) {
+              if (typeof setElement !== "object" ||
+                setElement instanceof Set ||
+                setElement instanceof Array) {
+                this.addDatom(objId,attribute,setElement)
               } else {
-                elId = this.newEntity();
-                objToId.set(elId, value);
-                push(setElement, elId);
+                let elId = this.newEntity()
+                this.addDatom(objId,attribute,elId)
+                push(setElement,elId)
               }
-              this.addDatom(objId, attribute, elId);
             }
           }
         } else {
-          let valId;
-          if (objToId.has(value)) {
-            valId = objToId.get(value);
-          } else {
-            valId = this.newEntity();
-            objToId.set(valId, value);
-            push(value, valId);
-          }
-          this.setDatom(objId, attribute, valId);
+          let valId = this.newEntity()
+          this.setDatom(objId,attribute,valId)
+          push(value,valId)
         }
       }
     }
-    push(obj, objId);
-    return objId;
+    push(obj,objId)
+    return objId
   }
 }
 
@@ -213,4 +208,4 @@ const excludedWords = new Set([
   "who",
   "with",
   "you",
-]);
+])
