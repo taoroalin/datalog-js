@@ -31,12 +31,7 @@ class DQ {
     this.aev = new Index()
     this.vae = new Index()
     this.nextEntityId = DQ.minEntityId
-    this.isMany = {}
-    if (schema && schema.many) {
-      for (let x of schema.many) {
-        this.isMany[x] = true
-      }
-    }
+    this.isMany = schema && schema.many
   }
 
   newEntity() {
