@@ -1,62 +1,95 @@
-class Index {
-  constructor() { }
-  get1(key1) {
-    if (this[key1] === undefined) {
-      this[key1] = {}
-    }
-    return this[key1]
+const indexGet1 = (index,key1) => {
+  if (index[key1] === undefined) {
+    index[key1] = {}
   }
-  get2(key1,key2) {
-    if (this[key1] === undefined) {
-      this[key1] = {}
-    }
-    const level = this[key1]
-    if (level[key2] === undefined) {
-      level[key2] = []
-    }
-    return level[key2]
+  return index[key1]
+}
+const indexGet2 = (index,key1,key2) => {
+  if (index[key1] === undefined) {
+    index[key1] = {}
   }
-  has2(key1,key2) {
-    return this[key1] && this[key1][key2]
+  const level = index[key1]
+  if (level[key2] === undefined) {
+    level[key2] = []
   }
+  return level[key2]
+}
+const indexHas2 = (index,key1,key2) => {
+  return index[key1] && index[key1][key2]
 }
 
 class DQ {
-  // numbers over one trillion are entity ids, numbers lower are regular numbers.
-  static minEntityId = 10000000000000;
+  // negative numbers are entity ids
+  static maxEntityId = -1;
 
-  constructor(name,schema) { // schema is a fugly word, especially in this font :(
-    // schema: [[attributeString, ...("fullText" | ...)]]
-    this.eav = new Index()
-    this.aev = new Index()
-    this.vae = new Index()
-    this.nextEntityId = DQ.minEntityId
-    this.isMany = schema && schema.many
-    this.graphName = name
+  constructor(graphName,many,nextEntityId = DQ.maxEntityId,eav,aev,vae) {
+    this.nextEntityId = nextEntityId
+    this.many = many
+    this.graphName = graphName
+    this.aev = {}
+    this.vae = {}
+    if (eav && aev && vae) {
+      this.eav = eav
+      this.aev = aev
+      this.vae = vae
+    } else if (eav) {
+      this.eav = eav
+      for (let ke in eav) {
+        const av = eav[ke]
+        for (let ka in av) {
+          if (this.aev[ka] === undefined) {
+            this.aev[ka] = {}
+          }
+          const v = av[ka]
+          this.aev[ka][ke] = v
+          if (typeof v !== "object") {
+            if (this.vae[v] === undefined) {
+              this.vae[v] = {}
+            }
+            const ae = this.vae[v]
+            if (ae[ka] === undefined)
+              ae[ka] = []
+            ae[ka].push(ke)
+          } else if (v instanceof Array) {
+            for (let sv of v) {
+              if (this.vae[sv] === undefined) {
+                this.vae[sv] = {}
+              }
+              const ae = this.vae[sv]
+              if (ae[ka] === undefined)
+                ae[ka] = []
+              ae[ka].push(ke)
+            }
+          }
+        }
+      }
+    } else {
+      this.eav = {}
+    }
   }
 
   newEntity() {
-    this.nextEntityId++
-    return this.nextEntityId - 1
+    this.nextEntityId--
+    return this.nextEntityId + 1
   }
 
   addDatom(entity,attribute,value) {
-    this.nextEntityId = Math.max(this.nextEntityId,entity + 1)
-    this.eav.get2(entity,attribute).push(value)
-    this.aev.get2(attribute,entity).push(value)
+    this.nextEntityId = Math.min(this.nextEntityId,entity + 1)
+    indexGet2(this.eav,entity,attribute).push(value)
+    indexGet2(this.aev,attribute,entity).push(value)
 
     if (typeof value !== "object") {
-      this.vae.get2(value,attribute).push(entity)
+      indexGet2(this.vae,value,attribute).push(entity)
     }
   }
 
   setDatom(entity,attribute,value) {
-    this.nextEntityId = Math.max(this.nextEntityId,entity + 1)
-    this.eav.get1(entity)[attribute] = value
-    this.aev.get1(attribute)[entity] = value
+    this.nextEntityId = Math.min(this.nextEntityId,entity + 1)
+    indexGet1(this.eav,entity)[attribute] = value
+    indexGet1(this.aev,attribute)[entity] = value
 
     if (typeof value !== "object") {
-      this.vae.get2(value,attribute).push(entity)
+      indexGet2(this.vae,value,attribute).push(entity)
     }
   }
 
@@ -67,20 +100,24 @@ class DQ {
       const result = {}
       if (includeId) result.entityId = entityId
       entityIdToObj[entityId] = result
-      const entity = this.eav.get1(entityId)
+      const entity = indexGet1(this.eav,entityId)
       for (let attribute in entity) {
         const value = entity[attribute]
-        if (this.isMany[attribute]) {
+        if (attribute === ":block/refs") {
+          result[attribute] = value.map(uid => ({ ":block/uid": uid }))
+        } else if (attribute === ":create/user") {
+          result[attribute] = value[":user/uid"]
+        } else if (this.many[attribute]) {
           result[attribute] = []
           for (let v of value) {
-            if (typeof v === "number" && v >= DQ.minEntityId) {
+            if (typeof v === "number" && v <= DQ.maxEntityId) {
               if (entityIdToObj[v])
                 result[attribute].push(entityIdToObj[v])
               else result[attribute].push(pull(v))
             } else result[attribute].push(v)
           }
         } else {
-          if (typeof value === "number" && value >= DQ.minEntityId) {
+          if (typeof value === "number" && value <= DQ.maxEntityId) {
             if (entityIdToObj[value])
               result[attribute] = entityIdToObj[value]
             else result[attribute] = pull(value)
@@ -99,16 +136,14 @@ class DQ {
         const value = obj[attribute]
         if (typeof value !== "object") {
           this.setDatom(objId,attribute,value)
-        } else if (value instanceof Array || value instanceof Set) {
+        } else if (value instanceof Array) {
           if (attribute === ":block/refs") {
             for (let x of Object.values(value)) {
               this.addDatom(objId,":block/refs",x[":block/uid"])
             }
           } else {
             for (let setElement of value) {
-              if (typeof setElement !== "object" ||
-                setElement instanceof Set ||
-                setElement instanceof Array) {
+              if (typeof setElement !== "object" || setElement instanceof Array) {
                 this.addDatom(objId,attribute,setElement)
               } else {
                 let elId = this.newEntity()
@@ -117,6 +152,8 @@ class DQ {
               }
             }
           }
+        } else if (attribute === ":create/user") {
+          this.setDatom(objId,attribute,value[":user/uid"])
         } else {
           let valId = this.newEntity()
           this.setDatom(objId,attribute,valId)
@@ -128,80 +165,3 @@ class DQ {
     return objId
   }
 }
-
-const excludedWords = new Set([
-  "a",
-  "also",
-  "and",
-  "as",
-  "at",
-  "be",
-  "but",
-  "by",
-  "can",
-  "come",
-  "could",
-  "do",
-  "even",
-  "for",
-  "from",
-  "get",
-  "go",
-  "have",
-  "he",
-  "her",
-  "here",
-  "him",
-  "his",
-  "how",
-  "I",
-  "if",
-  "in",
-  "into",
-  "it",
-  "its",
-  "just",
-  "know",
-  "like",
-  "look",
-  "me",
-  "more",
-  "my",
-  "new",
-  "no",
-  "not",
-  "now",
-  "of",
-  "on",
-  "one",
-  "only",
-  "or",
-  "other",
-  "our",
-  "out",
-  "say",
-  "see",
-  "she",
-  "so",
-  "some",
-  "take",
-  "tell",
-  "than",
-  "that",
-  "the",
-  "then",
-  "there",
-  "these",
-  "they",
-  "thing",
-  "this",
-  "those",
-  "to",
-  "very",
-  "want",
-  "way",
-  "well",
-  "who",
-  "with",
-  "you",
-])
