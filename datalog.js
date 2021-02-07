@@ -25,13 +25,14 @@ class DQ {
   // numbers over one trillion are entity ids, numbers lower are regular numbers.
   static minEntityId = 10000000000000;
 
-  constructor(schema) { // schema is a fugly word, especially in this font :(
+  constructor(name,schema) { // schema is a fugly word, especially in this font :(
     // schema: [[attributeString, ...("fullText" | ...)]]
     this.eav = new Index()
     this.aev = new Index()
     this.vae = new Index()
     this.nextEntityId = DQ.minEntityId
     this.isMany = schema && schema.many
+    this.graphName = name
   }
 
   newEntity() {
