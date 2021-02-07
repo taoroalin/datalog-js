@@ -106,7 +106,7 @@ class DQ {
         if (attribute === ":block/refs" || attribute === "refs") {
           result[attribute] = value.map(uid => ({ ":block/uid": uid }))
         } else if (attribute === ":create/user" || attribute === ":edit/user") {
-          result[attribute] = { ":user/id": value }
+          result[attribute] = { ":user/uid": value }
         } else if (this.many[attribute]) {
           result[attribute] = []
           for (let v of value) {
@@ -137,9 +137,13 @@ class DQ {
         if (typeof value !== "object") {
           this.setDatom(objId,attribute,value)
         } else if (value instanceof Array) {
-          if (attribute === ":block/refs" || attribute === "refs") {
+          if (attribute === ":block/refs") {
             for (let x of value) {
               this.addDatom(objId,attribute,x[":block/uid"])
+            }
+          } else if (attribute === "refs") {
+            for (let x of value) {
+              this.addDatom(objId,attribute,x["uid"])
             }
           } else {
             for (let setElement of value) {
