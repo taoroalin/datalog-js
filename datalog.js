@@ -103,8 +103,10 @@ class DQ {
       const entity = indexGet1(this.eav,entityId)
       for (let attribute in entity) {
         const value = entity[attribute]
-        if (attribute === ":block/refs" || attribute === "refs") {
+        if (attribute === ":block/refs") {
           result[attribute] = value.map(uid => ({ ":block/uid": uid }))
+        } else if (attribute === "refs") {
+          result[attribute] = value.map(uid => ({ "uid": uid }))
         } else if (attribute === ":create/user" || attribute === ":edit/user") {
           result[attribute] = { ":user/uid": value }
         } else if (this.many[attribute]) {
