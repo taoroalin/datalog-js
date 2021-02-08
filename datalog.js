@@ -29,7 +29,9 @@ const roamJsonToDatabase = (graphName,roamJson) => {
     graphName: graphName,
     eav: {},
     aev: {},
-    vae: {}
+    vae: {},
+    changeStack: [],
+    currentChanges: []
   }
   for (let page of roamJson) {
     databasePush(result,page)
@@ -43,7 +45,9 @@ const eavToDatabase = (graphName,eav) => {
     graphName: graphName,
     eav: eav,
     aev: {},
-    vae: {}
+    vae: {},
+    changeStack: [],
+    currentChanges: []
   }
   for (let ke in eav) {
     const av = eav[ke]
@@ -82,6 +86,9 @@ const databaseNewEntity = (database) => {
   return database.nextEntityId + 1
 }
 
+
+// modify the database while maintaining indices, but without storing diff or calling listeners
+
 const databaseAddDatom = (database,entity,attribute,value) => {
   database.nextEntityId = Math.min(database.nextEntityId,entity + 1)
   indexGet2(database.eav,entity,attribute).push(value)
@@ -101,6 +108,54 @@ const databaseSetDatom = (database,entity,attribute,value) => {
     indexGet2(database.vae,value,attribute).push(entity)
   }
 }
+
+const databaseSetAll = (database,entity,attribute,value) => {
+  const oldValues = database.eav[entity][attribute]
+  database.aev[attribute][entity] = value
+  database.eav[entity][attribute] = value
+  for (let oldValue of oldValues) {
+    database.vae[oldValue][attribute] = database.vae[oldValue][attribute].filter(e => e !== entity) // @to-perf ofc this is slow @slow @idkhowtosearchmycode
+  }
+  for (let value of value) {
+    if (database.vae[value] === undefined) {
+      database.vae[value] = {}
+    }
+    const ae = database.vae[value]
+    if (ae[attribute] === undefined) {
+      ae[attribute] = []
+    }
+    ae[attribute].push(entity)
+  }
+}
+
+
+// Modify the database while maintaining undo stack, calling listeners, and persisting changes.
+
+const databaseChange = (database,change,commitMain,commitWorker) => {
+  const [op,entity,attribute,value] = change
+  if (change.length > 5)
+    change.push(database.eav[entity][attribute])
+  database.currentChanges.push(change)
+  if (op === "set") {
+    databaseSetDatom(database,entity,attribute,value)
+  } else if (op === "add") {
+    databaseAddDatom(database,entity,attribute,value)
+  } else if (op === "setAll") {
+    databaseSetAll(database,entity,attribute,value)
+  }
+  if (commitMain) {
+    saveWorker.postMessage(["change",database.currentChanges])
+    database.changeStack.push(database.currentChanges)
+    database.currentChanges = []
+  }
+  if (commitWorker) {
+    database.changeStack.push(database.currentChanges)
+    database.currentChanges = []
+  }
+}
+
+
+// Push / Pull : convert objects to rdf and back
 
 const databasePull = (database,entityId,includeId = false) => {
   // Keep track of seen entities to capture recursive data structures
@@ -162,7 +217,7 @@ const databasePush = (database,obj,objId) => {
               databaseAddDatom(database,objId,attribute,setElement)
             } else {
               let elId = databaseNewEntity(database)
-              databaseAddDatom(database,objId,attribute,elId)
+              databaseAddDatom(database,objId,attribute,elId) // could pull attr check in here out of loop @to-perf
               push(setElement,elId)
             }
           }
