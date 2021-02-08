@@ -133,9 +133,6 @@ const databaseSetAll = (database,entity,attribute,value) => {
 
 const databaseChange = (database,change,commitMain,commitWorker) => {
   const [op,entity,attribute,value] = change
-  if (change.length > 5)
-    change.push(database.eav[entity][attribute])
-  database.currentChanges.push(change)
   if (op === "set") {
     databaseSetDatom(database,entity,attribute,value)
   } else if (op === "add") {
@@ -143,6 +140,9 @@ const databaseChange = (database,change,commitMain,commitWorker) => {
   } else if (op === "setAll") {
     databaseSetAll(database,entity,attribute,value)
   }
+  if (op !== "add" && change.length > 5)
+    change.push(database.eav[entity][attribute])
+  database.currentChanges.push(change)
   if (commitMain) {
     saveWorker.postMessage(["change",database.currentChanges])
     database.changeStack.push(database.currentChanges)
@@ -151,6 +151,24 @@ const databaseChange = (database,change,commitMain,commitWorker) => {
   if (commitWorker) {
     database.changeStack.push(database.currentChanges)
     database.currentChanges = []
+  }
+}
+
+// no redo yet
+const databaseUndo = (database) => {
+  const changeSet = database.changeStack.pop()
+  for (let i = changeSet.length - 1; i >= 0; i--) {
+    const change = changeSet[i]
+    if (op === "set") {
+      databaseSetDatom(database,change[1],change[2],change[4])
+    } else if (op === "add") {
+      databaseAddDatom(database,change[1],change[2],change[4])
+    } else if (op === "setAll") {
+      databaseSetAll(database,change[1],change[2],change[4])
+    }
+  }
+  if (saveWorker !== undefined) {
+    saveWorker.postMessage(["undo",null]) // standard to send len 2 array. second will be ignored
   }
 }
 
